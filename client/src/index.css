@@ -1,7 +1,85 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  
+  /* SkillSync Brand Palette: Warm editorial & forest tones */
+  --color-forest-50: #f0f7f4;
+  --color-forest-100: #dceee6;
+  --color-forest-200: #bbdecF;
+  --color-forest-300: #8ec6b2;
+  --color-forest-400: #5da890;
+  --color-forest-500: #3f8d75;
+  --color-forest-600: #2e715e;
+  --color-forest-700: #265b4c;
+  --color-forest-800: #1d463b;
+  --color-forest-900: #163930;
+  --color-forest-950: #0b1f1a;
+
+  --color-sand-50: #fbf9f5;
+  --color-sand-100: #f4f0e7;
+  --color-sand-200: #e8e0ce;
+  --color-sand-300: #d7c9ad;
+  --color-sand-400: #c4ae8a;
+
+  /* Custom Animations */
+  --animate-fade-in: fadeIn 0.25s ease-out forwards;
+  --animate-slide-up: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-scale-in: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 antialiased font-sans min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white;
+    @apply bg-[#FAF8F5] text-stone-900 antialiased font-sans min-h-screen flex flex-col selection:bg-forest-900 selection:text-white;
+  }
+}
+
+/* Reusable form & card utility classes using @apply */
+@layer components {
+  .form-label {
+    @apply block text-xs font-bold uppercase tracking-wider text-stone-700 mb-1.5;
+  }
+
+  .form-input {
+    @apply w-full px-3.5 py-2.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-900 placeholder:text-stone-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-forest-800/20 focus:border-forest-800 transition-all;
+  }
+
+  .card-surface {
+    @apply bg-white rounded-2xl border border-stone-200/90 shadow-xs hover:border-stone-300 transition-all;
+  }
+
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-forest-800/30 focus:ring-offset-2;
   }
 }

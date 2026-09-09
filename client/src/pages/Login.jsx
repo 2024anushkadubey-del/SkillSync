@@ -1,75 +1,106 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Sparkles, Mail, Lock, ArrowLeft, ArrowRight, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Sparkles, Mail, Lock, ArrowLeft, ArrowRight, Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react';
 import Button from '../components/Button';
+import { useAuth } from '../hooks/useAuth';
 
 export default function Login() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const location = useLocation();
+  const { login } = useAuth();
 
-  const handleSubmit = (e) => {
+  // Controlled form state
+  const [email, setEmail] = useState('alex.rivera@university.edu');
+  const [password, setPassword] = useState('studentPassword123');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+
+  // Form submission and validation state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const fromPath = location.state?.from?.pathname || '/dashboard';
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitted(true);
-    // Experiment 1 UI demonstration redirect
-    setTimeout(() => {
-      navigate('/dashboard');
-    }, 600);
+    setErrorMessage('');
+
+    // Client-side validation
+    if (!email.trim() || !password.trim()) {
+      setErrorMessage('Please fill in both your student email and password.');
+      return;
+    }
+
+    if (!email.includes('@')) {
+      setErrorMessage('Please enter a valid university email address.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await login(email.trim(), password);
+      // Navigate to intended page upon successful authentication
+      navigate(fromPath, { replace: true });
+    } catch (err) {
+      setErrorMessage(err.message || 'Unable to sign in. Please verify your student credentials.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <div className="min-h-[85vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-white p-8 sm:p-10 rounded-3xl border border-slate-200 shadow-xl shadow-slate-200/50 relative">
+    <div className="min-h-[80vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 animate-fade-in">
+      <div className="max-w-md w-full space-y-6 bg-white p-7 sm:p-9 rounded-2xl border border-stone-200/90 shadow-lg shadow-stone-900/5 relative">
         
-        {/* Back link */}
+        {/* Back Link */}
         <Link
           to="/"
-          className="inline-flex items-center text-xs font-semibold text-slate-500 hover:text-indigo-600 transition-colors mb-2 gap-1.5"
+          className="inline-flex items-center text-xs font-semibold text-stone-500 hover:text-forest-900 transition-colors gap-1.5"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          Back to Home
+          <span>Back to Home</span>
         </Link>
 
-        {/* Header */}
-        <div className="text-center">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/30">
-            <Sparkles className="w-6 h-6" />
+        {/* Card Header */}
+        <div className="text-center pt-1">
+          <div className="w-11 h-11 rounded-xl bg-forest-900 text-white flex items-center justify-center mx-auto mb-3.5 shadow-2xs">
+            <Sparkles className="w-5 h-5 text-forest-200" />
           </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Welcome Back
+          <h2 className="text-xl sm:text-2xl font-extrabold text-stone-900 tracking-tight">
+            Student Sign In
           </h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Sign in to access your SkillSync student dashboard
+          <p className="mt-1 text-xs sm:text-sm text-stone-500">
+            Access your SkillSync peer exchange dashboard
           </p>
         </div>
 
-        {/* Demo notification banner */}
-        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-800">
-          <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-          <span>
-            <strong>Experiment 1 Preview:</strong> Authentication is UI-only. Click Sign In to navigate to the sample Student Dashboard.
-          </span>
-        </div>
+        {/* Validation error message if triggered */}
+        {errorMessage && (
+          <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-xs text-rose-800 animate-slide-up">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
 
-        {/* Form */}
-        <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
+        {/* Sign In Form */}
+        <form className="space-y-4" onSubmit={handleSubmit}>
           
           {/* Email Field */}
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-              Student Email Address
+            <label className="form-label">
+              University Email Address
             </label>
             <div className="relative">
-              <Mail className="w-5 h-5 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
+              <Mail className="w-4 h-4 text-stone-400 absolute left-3.5 top-3 pointer-events-none" />
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="student@university.edu"
-                className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                className="form-input pl-10"
+                disabled={isSubmitting}
               />
             </div>
           </div>
@@ -77,39 +108,48 @@ export default function Login() {
           {/* Password Field */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+              <label className="form-label mb-0">
                 Password
               </label>
-              <span className="text-xs text-indigo-600 font-medium cursor-pointer hover:underline">
+              <button
+                type="button"
+                className="text-xs text-forest-800 font-medium hover:underline focus:outline-none"
+                onClick={() => alert('Password reset demonstration: In a production environment, a reset token would be emailed.')}
+              >
                 Forgot password?
-              </span>
+              </button>
             </div>
             <div className="relative">
-              <Lock className="w-5 h-5 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
+              <Lock className="w-4 h-4 text-stone-400 absolute left-3.5 top-3 pointer-events-none" />
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full pl-11 pr-11 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                className="form-input pl-10 pr-10"
+                disabled={isSubmitting}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 focus:outline-none"
+                className="absolute right-3.5 top-3 text-stone-400 hover:text-stone-600 focus:outline-none"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
           </div>
 
-          {/* Remember me checkbox */}
-          <div className="flex items-center justify-between text-xs">
-            <label className="flex items-center space-x-2 text-slate-600 cursor-pointer">
+          {/* Remember me option */}
+          <div className="flex items-center justify-between pt-0.5 text-xs text-stone-600">
+            <label className="flex items-center space-x-2 cursor-pointer select-none">
               <input
                 type="checkbox"
-                className="rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="rounded text-forest-900 focus:ring-forest-800 border-stone-300 w-3.5 h-3.5"
+                disabled={isSubmitting}
               />
               <span>Remember me on this browser</span>
             </label>
@@ -119,20 +159,29 @@ export default function Login() {
           <Button
             type="submit"
             size="lg"
-            disabled={submitted}
-            className="w-full gap-2 text-sm shadow-md"
+            disabled={isSubmitting}
+            className="w-full mt-2"
           >
-            {submitted ? 'Signing In...' : 'Sign In'}
-            <ArrowRight className="w-4 h-4" />
+            {isSubmitting ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Signing In...
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5">
+                Sign In to Dashboard
+                <ArrowRight className="w-4 h-4" />
+              </span>
+            )}
           </Button>
 
         </form>
 
-        {/* Footer link to Register */}
-        <div className="pt-6 border-t border-slate-100 text-center text-xs text-slate-600">
-          Don't have a student account yet?{' '}
-          <Link to="/register" className="font-bold text-indigo-600 hover:text-indigo-700 hover:underline">
-            Register for SkillSync
+        {/* Footer Link to Register */}
+        <div className="pt-4 border-t border-stone-100 text-center text-xs text-stone-600">
+          Don't have a student profile yet?{' '}
+          <Link to="/register" className="font-bold text-forest-900 hover:underline">
+            Register for free
           </Link>
         </div>
 

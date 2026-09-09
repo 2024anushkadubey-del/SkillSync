@@ -1,4 +1,5 @@
 import React from 'react';
+import Badge from './Badge';
 
 export default function SectionHeading({
   badge,
@@ -10,17 +11,19 @@ export default function SectionHeading({
   return (
     <div className={`${centered ? 'text-center max-w-2xl mx-auto' : 'max-w-xl'} ${className}`}>
       {badge && (
-        <span className="inline-block px-3 py-1 text-xs font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-100/80 rounded-full mb-3">
-          {badge}
-        </span>
+        <div className="mb-3">
+          <Badge variant="forest" size="md">
+            {badge}
+          </Badge>
+        </div>
       )}
       {title && (
-        <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900 tracking-tight">
+        <h2 className="text-2xl sm:text-3xl font-extrabold text-stone-900 tracking-tight">
           {title}
         </h2>
       )}
       {subtitle && (
-        <p className="mt-3 text-base sm:text-lg text-slate-600 leading-relaxed">
+        <p className="mt-2.5 text-sm sm:text-base text-stone-600 leading-relaxed font-normal">
           {subtitle}
         </p>
       )}
