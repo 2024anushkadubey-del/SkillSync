@@ -17,6 +17,22 @@ export default function Navbar() {
     navigate('/login');
   };
 
+  const getRoleBadgeStyle = (role) => {
+    switch (role?.toLowerCase()) {
+      case 'admin':
+        return 'bg-rose-100 text-rose-800 border-rose-300';
+      case 'auditor':
+        return 'bg-amber-100 text-amber-800 border-amber-300';
+      case 'hr':
+        return 'bg-purple-100 text-purple-800 border-purple-300';
+      case 'senior':
+        return 'bg-blue-100 text-blue-800 border-blue-300';
+      case 'staff':
+      default:
+        return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+    }
+  };
+
   const profileMenuItems = [
     {
       label: 'Student Dashboard',
@@ -25,8 +41,8 @@ export default function Navbar() {
       active: isActive('/dashboard'),
     },
     {
-      label: `Signed in as ${user?.name || 'Alex Rivera'}`,
-      badge: user?.role ? user.role.split('(')[0].trim() : 'CS Major',
+      label: `Role: ${user?.role ? user.role.toUpperCase() : 'STAFF'}`,
+      badge: user?.role === 'auditor' ? 'READ-ONLY' : (user?.role?.toUpperCase() || 'STAFF'),
       disabled: true,
     },
     { divider: true },
@@ -117,6 +133,9 @@ export default function Navbar() {
                       {user?.avatar || 'AR'}
                     </div>
                     <span>{user?.name || 'Alex Rivera'}</span>
+                    <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded border ${getRoleBadgeStyle(user?.role)}`}>
+                      {user?.role || 'staff'}
+                    </span>
                   </button>
                 )}
               />

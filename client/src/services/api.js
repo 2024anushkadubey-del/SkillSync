@@ -1,9 +1,17 @@
 import axios from 'axios';
 
+// Resolve API base URL: use production VITE_API_URL if configured, otherwise fallback to local '/api'
+const getBaseURL = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (!envUrl) return '/api';
+  const cleaned = envUrl.trim().replace(/\/$/, '');
+  return cleaned.endsWith('/api') ? cleaned : `${cleaned}/api`;
+};
+
 // Create a centralized Axios instance configured for the SkillSync API layer
 const api = axios.create({
-  baseURL: '/api',
-  timeout: 8000,
+  baseURL: getBaseURL(),
+  timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -113,6 +121,28 @@ export const activityApi = {
   },
   createSwapRequest: async (swapData) => {
     const res = await api.post('/swap-requests', swapData);
+    return res.data;
+  },
+};
+
+export const protectedApi = {
+  getUserData: async () => {
+    const res = await api.get('/protected/user');
+    return res.data;
+  },
+  getAdminData: async () => {
+    const res = await api.get('/protected/admin');
+    return res.data;
+  },
+};
+
+export const announcementsApi = {
+  getAll: async () => {
+    const res = await api.get('/announcements');
+    return res.data;
+  },
+  publish: async (message) => {
+    const res = await api.post('/announcements', { message });
     return res.data;
   },
 };

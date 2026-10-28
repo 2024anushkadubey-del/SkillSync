@@ -1,8 +1,56 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Sparkles, Mail, Lock, ArrowLeft, ArrowRight, Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react';
+import { Sparkles, Mail, Lock, ArrowLeft, ArrowRight, Eye, EyeOff, AlertCircle, Loader2, ShieldCheck, UserCheck } from 'lucide-react';
 import Button from '../components/Button';
 import { useAuth } from '../hooks/useAuth';
+
+const DEMO_ROLES = [
+  {
+    role: 'staff',
+    label: 'Student (Staff)',
+    email: 'staff@university.edu',
+    pass: 'StaffPass123!',
+    desc: 'Standard student permissions: manage own skills & swap proposals.',
+    color: 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100',
+    tag: 'Staff',
+  },
+  {
+    role: 'senior',
+    label: 'Senior Mentor',
+    email: 'senior@university.edu',
+    pass: 'SeniorPass123!',
+    desc: 'Senior student mentor: inherits staff + advanced workshop offerings.',
+    color: 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100',
+    tag: 'Senior',
+  },
+  {
+    role: 'HR',
+    label: 'Coordinator (HR)',
+    email: 'hr@university.edu',
+    pass: 'HRPass123!',
+    desc: 'Campus coordinator: category management & student moderation view.',
+    color: 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100',
+    tag: 'HR',
+  },
+  {
+    role: 'auditor',
+    label: 'Compliance Auditor',
+    email: 'auditor@university.edu',
+    pass: 'AuditorPass123!',
+    desc: 'Quality auditor: READ-ONLY access across all data. Mutations blocked.',
+    color: 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100',
+    tag: 'Auditor (Read-Only)',
+  },
+  {
+    role: 'admin',
+    label: 'System Admin',
+    email: 'admin@university.edu',
+    pass: 'AdminPass123!',
+    desc: 'Full administrator: complete access to all models, logs & role controls.',
+    color: 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100',
+    tag: 'Admin',
+  },
+];
 
 export default function Login() {
   const navigate = useNavigate();
@@ -10,8 +58,8 @@ export default function Login() {
   const { login } = useAuth();
 
   // Controlled form state
-  const [email, setEmail] = useState('alex.rivera@university.edu');
-  const [password, setPassword] = useState('studentPassword123');
+  const [email, setEmail] = useState('staff@university.edu');
+  const [password, setPassword] = useState('StaffPass123!');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
 
@@ -20,6 +68,12 @@ export default function Login() {
   const [errorMessage, setErrorMessage] = useState('');
 
   const fromPath = location.state?.from?.pathname || '/dashboard';
+
+  const selectDemoRole = (demo) => {
+    setEmail(demo.email);
+    setPassword(demo.pass);
+    setErrorMessage('');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -43,15 +97,15 @@ export default function Login() {
       // Navigate to intended page upon successful authentication
       navigate(fromPath, { replace: true });
     } catch (err) {
-      setErrorMessage(err.message || 'Unable to sign in. Please verify your student credentials.');
+      setErrorMessage(err.message || 'Unable to sign in. Please verify your credentials.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 animate-fade-in">
-      <div className="max-w-md w-full space-y-6 bg-white p-7 sm:p-9 rounded-2xl border border-stone-200/90 shadow-lg shadow-stone-900/5 relative">
+    <div className="min-h-[85vh] flex items-center justify-center py-10 px-4 sm:px-6 lg:px-8 animate-fade-in">
+      <div className="max-w-xl w-full space-y-6 bg-white p-7 sm:p-9 rounded-2xl border border-stone-200/90 shadow-lg shadow-stone-900/5 relative">
         
         {/* Back Link */}
         <Link
@@ -68,11 +122,46 @@ export default function Login() {
             <Sparkles className="w-5 h-5 text-forest-200" />
           </div>
           <h2 className="text-xl sm:text-2xl font-extrabold text-stone-900 tracking-tight">
-            Student Sign In
+            Sign In to SkillSync
           </h2>
           <p className="mt-1 text-xs sm:text-sm text-stone-500">
-            Access your SkillSync peer exchange dashboard
+            Peer-to-peer university skill sharing
           </p>
+        </div>
+
+        {/* Role Quick Selectors */}
+        <div className="bg-stone-50/80 border border-stone-200 rounded-xl p-3.5">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-forest-800" />
+              Choose a role to sign in:
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {DEMO_ROLES.map((demo) => {
+              const isSelected = email === demo.email;
+              return (
+                <button
+                  key={demo.role}
+                  type="button"
+                  onClick={() => selectDemoRole(demo)}
+                  className={`text-left p-2 rounded-lg border text-xs transition-all ${
+                    isSelected
+                      ? 'border-forest-900 bg-forest-900 text-white shadow-xs'
+                      : `${demo.color} border`
+                  }`}
+                >
+                  <div className="font-bold flex items-center justify-between">
+                    <span>{demo.tag}</span>
+                    {isSelected && <UserCheck className="w-3 h-3 text-forest-200" />}
+                  </div>
+                  <div className={`text-[10px] truncate ${isSelected ? 'text-forest-200' : 'text-stone-600'}`}>
+                    {demo.email}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Validation error message if triggered */}
@@ -98,7 +187,7 @@ export default function Login() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="student@university.edu"
+                placeholder="staff@university.edu"
                 className="form-input pl-10"
                 disabled={isSubmitting}
               />
@@ -114,7 +203,7 @@ export default function Login() {
               <button
                 type="button"
                 className="text-xs text-forest-800 font-medium hover:underline focus:outline-none"
-                onClick={() => alert('Password reset demonstration: In a production environment, a reset token would be emailed.')}
+                onClick={() => alert('In a production environment, a password reset link would be emailed to your student address.')}
               >
                 Forgot password?
               </button>

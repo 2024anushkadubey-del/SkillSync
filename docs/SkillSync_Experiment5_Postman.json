@@ -1,0 +1,904 @@
+{
+  "info": {
+    "_postman_id": "skillsync-experiment5-secure-rest-api",
+    "name": "SkillSync Experiment 5 - Production-Ready Secure REST APIs",
+    "description": "Comprehensive Postman collection for Experiment 5 demonstrating Helmet headers, express-validator, rate limiting, JWT authentication, RBAC authorization, bcrypt password hashing, full CRUD lifecycle, and centralized error handling on MongoDB.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5001",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "auditorToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "skillId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "TEST 1 — Register Success (201 Created)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 201 Created\", function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "pm.test(\"Registration returns token and sanitized user profile\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('token');",
+              "    pm.expect(jsonData).to.have.property('user');",
+              "    pm.expect(jsonData.user).to.not.have.property('password');",
+              "    pm.expect(jsonData.user).to.not.have.property('internalModerationNotes');",
+              "    if (jsonData.token) {",
+              "        pm.collectionVariables.set('token', jsonData.token);",
+              "    }",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Alex Taylor\",\n  \"email\": \"alex.taylor.{{$timestamp}}@university.edu\",\n  \"major\": \"Cybersecurity & Data Networks\",\n  \"password\": \"SecureStudentPass123!\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/register",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "register"
+          ]
+        },
+        "description": "Registers a unique new student user using dynamic variable {{$timestamp}}. Passwords are encrypted with bcryptjs. Response omits sensitive fields (201 Created)."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 2 — Registration Validation Failure (400 Bad Request)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 400 Bad Request\", function () {",
+              "    pm.response.to.have.status(400);",
+              "});",
+              "pm.test(\"Returns validation errors array\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.message).to.eql(\"Validation failed\");",
+              "    pm.expect(jsonData.errors).to.be.an(\"array\");",
+              "    pm.expect(jsonData.errors.length).to.be.above(0);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"\",\n  \"email\": \"invalid-email-format\",\n  \"password\": \"123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/register",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "register"
+          ]
+        },
+        "description": "Demonstrates express-validator validation rules on registration (400 Bad Request with field error breakdown)."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 3 — Login Input Validation Failure (400 Bad Request)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 400 Bad Request\", function () {",
+              "    pm.response.to.have.status(400);",
+              "});",
+              "pm.test(\"Returns validation errors array for login input\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.message).to.eql(\"Validation failed\");",
+              "    pm.expect(jsonData.errors).to.be.an(\"array\");",
+              "    pm.expect(jsonData.errors.length).to.be.above(0);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"not-a-valid-email\",\n  \"password\": \"\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Tests express-validator login rules (empty password and invalid university email format return 400 Bad Request)."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 4 — Login Success (200 OK + JWT)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Returns valid JWT token and user info\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('token');",
+              "    pm.expect(jsonData).to.have.property('user');",
+              "    pm.expect(jsonData.user.role).to.eql('staff');",
+              "    if (jsonData.token) {",
+              "        pm.collectionVariables.set('token', jsonData.token);",
+              "    }",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"staff@university.edu\",\n  \"password\": \"StaffPass123!\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Authenticates using valid credentials. Returns signed JWT containing user ID and persisted role."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 5 — Wrong Password (401 Unauthorized)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 401 Unauthorized\", function () {",
+              "    pm.response.to.have.status(401);",
+              "});",
+              "pm.test(\"Returns credentials verification error\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.error).to.include(\"Unauthorized\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"staff@university.edu\",\n  \"password\": \"IncorrectPassword999!\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Tests password mismatch. Server securely verifies bcrypt hash and returns 401 Unauthorized."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 6 — Helmet Security Headers Present (200 OK)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Helmet security headers are active on response\", function () {",
+              "    pm.expect(pm.response.headers.has(\"Content-Security-Policy\")).to.be.true;",
+              "    pm.expect(pm.response.headers.has(\"X-Content-Type-Options\")).to.be.true;",
+              "    pm.expect(pm.response.headers.has(\"X-Frame-Options\")).to.be.true;",
+              "    pm.expect(pm.response.headers.has(\"Strict-Transport-Security\")).to.be.true;",
+              "});",
+              "pm.test(\"Rate limit headers are present\", function () {",
+              "    pm.expect(pm.response.headers.has(\"RateLimit-Limit\")).to.be.true;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "health"
+          ]
+        },
+        "description": "Verifies Helmet security headers (CSP, X-Content-Type-Options, X-Frame-Options, HSTS) applied across API endpoints."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 7 — Protected Profile WITH JWT (200 OK)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Protected profile does not expose password hash\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('email');",
+              "    pm.expect(jsonData).to.not.have.property('password');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/profile",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "user",
+            "profile"
+          ]
+        },
+        "description": "Accesses protected profile using valid JWT Bearer token. Password field is safely omitted."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 8 — Protected Endpoint WITHOUT JWT (401 Unauthorized)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 401 Unauthorized\", function () {",
+              "    pm.response.to.have.status(401);",
+              "});",
+              "pm.test(\"Returns authentication required error\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.error).to.eql(\"Unauthorized\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "me"
+          ]
+        },
+        "description": "Tests route guard when Authorization header is missing. Returns 401 Unauthorized."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 9 — Invalid / Tampered JWT Token (401 Unauthorized)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 401 Unauthorized\", function () {",
+              "    pm.response.to.have.status(401);",
+              "});",
+              "pm.test(\"Rejects invalid token signature\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.error).to.eql(\"Unauthorized\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer invalid.fake.token.signature"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "me"
+          ]
+        },
+        "description": "Tests route guard with an invalid token signature. Returns 401 Unauthorized."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 10a — Login as Auditor (Read-Only Role)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Stores auditorToken for RBAC tests\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.user.role).to.eql(\"auditor\");",
+              "    if (jsonData.token) {",
+              "        pm.collectionVariables.set('auditorToken', jsonData.token);",
+              "    }",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"auditor@university.edu\",\n  \"password\": \"AuditorPass123!\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Login as an Auditor to obtain an auditor role token for RBAC permission testing."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 10b — RBAC Authorization Denial (403 Forbidden)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 403 Forbidden\", function () {",
+              "    pm.response.to.have.status(403);",
+              "});",
+              "pm.test(\"Rejects mutation for auditor role lacking skills:create permission\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.error).to.include(\"Forbidden\");",
+              "    pm.expect(jsonData.requiredPermission).to.eql(\"skills:create\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auditorToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"teach\",\n  \"name\": \"Unauthorized Skill Addition\",\n  \"level\": \"Beginner\",\n  \"category\": \"General\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/skills",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "skills"
+          ]
+        },
+        "description": "Tests RBAC middleware: An authenticated Auditor attempting a skill mutation is rejected with 403 Forbidden."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 11 — Skill Creation Input Validation Failure (400 Bad Request)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 400 Bad Request\", function () {",
+              "    pm.response.to.have.status(400);",
+              "});",
+              "pm.test(\"Returns validation error breakdown for invalid skill fields\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.message).to.eql(\"Validation failed\");",
+              "    pm.expect(jsonData.errors).to.be.an(\"array\");",
+              "    pm.expect(jsonData.errors.length).to.be.above(0);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"invalid_type\",\n  \"name\": \"\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/skills",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "skills"
+          ]
+        },
+        "description": "Tests express-validator rules on skill creation: missing name and invalid type ('invalid_type' instead of 'teach'|'learn') return 400 Bad Request."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 12 — Existing CRUD: CREATE Skill (201 Created)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 201 Created\", function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "pm.test(\"Skill created and skillId stored\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('id');",
+              "    pm.expect(jsonData.name).to.eql(\"Cloud Native Security Architectures\");",
+              "    if (jsonData.id) {",
+              "        pm.collectionVariables.set('skillId', jsonData.id);",
+              "    }",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"teach\",\n  \"name\": \"Cloud Native Security Architectures\",\n  \"level\": \"Expert\",\n  \"category\": \"Development\",\n  \"description\": \"Secure REST API design, rate limiting, and RBAC authorization on MongoDB.\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/skills",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "skills"
+          ]
+        },
+        "description": "Proves Experiment 4 CRUD functionality remains operational with Experiment 5 security active. Captures skillId."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 13 — Existing CRUD: READ All Skills (200 OK)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Retrieves offered and wanted skill lists\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('offered');",
+              "    pm.expect(jsonData).to.have.property('wanted');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/skills",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "skills"
+          ]
+        },
+        "description": "READ operation: Retrieves skills from MongoDB (200 OK)."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 14 — Existing CRUD: READ Single Skill (200 OK)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Resource ID matches saved skillId\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.id).to.eql(pm.collectionVariables.get('skillId'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/skills/{{skillId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "skills",
+            "{{skillId}}"
+          ]
+        },
+        "description": "READ Single operation: Retrieves single skill by skillId from MongoDB (200 OK)."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 15 — Existing CRUD: UPDATE Skill (200 OK)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Skill level and description updated successfully\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.level).to.eql(\"Master\");",
+              "    pm.expect(jsonData.description).to.include(\"Experiment 5\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"level\": \"Master\",\n  \"description\": \"Updated via Experiment 5 Postman validation suite.\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/skills/{{skillId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "skills",
+            "{{skillId}}"
+          ]
+        },
+        "description": "UPDATE operation: Modifies skill level and description using skillId and token (200 OK)."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 16 — Existing CRUD: DELETE Skill (200 OK)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Deletion response confirms removedId\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.success).to.be.true;",
+              "    pm.expect(jsonData.removedId).to.eql(pm.collectionVariables.get('skillId'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/skills/{{skillId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "skills",
+            "{{skillId}}"
+          ]
+        },
+        "description": "DELETE operation: Removes skill by skillId from MongoDB using authorized token (200 OK)."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 17 — Centralized Error Handling: 404 Unknown Endpoint (404 Not Found)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 404 Not Found\", function () {",
+              "    pm.response.to.have.status(404);",
+              "});",
+              "pm.test(\"Returns clean JSON error without raw stack trace\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.error).to.include(\"Not Found\");",
+              "    pm.expect(jsonData).to.not.have.property('stack');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/does-not-exist",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "does-not-exist"
+          ]
+        },
+        "description": "Tests centralized 404 error handler: Returns clean JSON message without exposing internal stack traces."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 18 — Rate Limiting (429 Too Many Requests Notice)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Rate limiter active on auth route\", function () {",
+              "    pm.expect([200, 429]).to.include(pm.response.code);",
+              "    if (pm.response.code === 429) {",
+              "        var jsonData = pm.response.json();",
+              "        pm.expect(jsonData.error).to.include(\"Too Many Requests\");",
+              "    }",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"staff@university.edu\",\n  \"password\": \"StaffPass123!\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Verifies express-rate-limit protection. Exceeding 10 auth requests within 15 minutes triggers HTTP 429 Too Many Requests. Placed last so earlier test runs are unaffected."
+      },
+      "response": []
+    }
+  ]
+}

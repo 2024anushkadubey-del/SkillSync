@@ -1,184 +1,117 @@
+require('dotenv').config();
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const { Server } = require('socket.io');
+const connectDB = require('./config/db');
+
+// Models
+const User = require('./models/User');
+const Category = require('./models/Category');
+const Activity = require('./models/Activity');
+const SwapRequest = require('./models/SwapRequest');
+
+// RBAC & Auth Middleware
+const {
+  ROLES,
+  PERMISSIONS,
+  ROLE_PERMISSIONS,
+  hasPermission,
+} = require('./config/rbac');
+
+const {
+  authenticate,
+  optionalAuthenticate,
+  requirePermission,
+  requireRole,
+  generateToken,
+} = require('./middleware/auth');
+
+// Experiment 5 Security Middlewares
+const { apiLimiter, authLimiter } = require('./middleware/rateLimiter');
+const {
+  validateRegister,
+  validateLogin,
+  validateCreateSkill,
+  validateUpdateSkill,
+} = require('./middleware/validators');
+const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 5001;
 
-// Middlewares
-app.use(cors());
+// Allowed origins for local development, Docker, and cloud production
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:8080',
+  'http://127.0.0.1:8080',
+];
+
+// Append production frontend domain if provided via CLIENT_URL
+if (process.env.CLIENT_URL) {
+  const urls = process.env.CLIENT_URL.split(',').map((u) => u.trim().replace(/\/$/, '')).filter(Boolean);
+  urls.forEach((url) => {
+    if (!allowedOrigins.includes(url)) {
+      allowedOrigins.push(url);
+    }
+  });
+}
+
+// Experiment 8 & 10: Attach Socket.IO to the HTTP server
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+});
+
+// In-memory store for recent announcements during live demonstration
+const liveAnnouncements = [];
+
+// Socket.IO connection and room management
+io.on('connection', (socket) => {
+  console.log('[Socket.IO]: Client connected:', socket.id);
+
+  socket.on('join-announcements', () => {
+    socket.join('announcements');
+    console.log(`[Socket.IO]: Socket ${socket.id} joined 'announcements' room`);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('[Socket.IO]: Client disconnected:', socket.id);
+  });
+});
+
+// Connect to MongoDB
+connectDB();
+
+// ----------------------------------------------------
+// GLOBAL SECURITY & CORE MIDDLEWARES (Experiment 5)
+// ----------------------------------------------------
+
+// Trust reverse proxy (Nginx) for rate-limiting client IP resolution
+app.set('trust proxy', 1);
+
+// 1. Helmet: Secure HTTP headers (XSS, Sniffing, Clickjacking protection)
+app.use(helmet());
+
+// 2. CORS: Explicit origin handling for frontend client
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+}));
+
+// 3. Body parser
 app.use(express.json());
 
-// In-Memory Database / Mock Store
-let currentUserProfile = {
-  id: "usr-alex",
-  name: "Alex Rivera",
-  email: "alex.rivera@university.edu",
-  role: "Computer Science Major (Sophomore)",
-  university: "State Tech University",
-  avatar: "AR",
-  completedSwaps: 14,
-  rating: 4.9,
-  availability: "Weekdays (After 4 PM) & Saturday mornings",
-  bio: "Passionate about full-stack web development with React & Tailwind. Looking to trade frontend tutoring for UI/UX Figma design critique and Spanish conversation practice!",
-  skillsOffered: [
-    { id: "s1", name: "React.js", level: "Advanced", category: "Development", description: "Components, hooks, state management, and responsive layouts." },
-    { id: "s2", name: "JavaScript", level: "Advanced", category: "Development", description: "ES6+, async/await, DOM manipulation, and arrays/objects." },
-    { id: "s3", name: "Python Basics", level: "Intermediate", category: "Development", description: "Control flow, OOP fundamentals, and script automation." },
-  ],
-  skillsWanted: [
-    { id: "w1", name: "Figma UI/UX", targetLevel: "Intermediate", category: "Design", description: "Design systems, auto-layout, wireframing, and component libraries." },
-    { id: "w2", name: "Spanish Conversation", targetLevel: "Conversational", category: "Languages", description: "Grammar review and casual weekly dialogue practice." },
-    { id: "w3", name: "Data Structures", targetLevel: "Advanced", category: "Academics", description: "Trees, graphs, recursion, and algorithm optimization." },
-  ],
-};
+// 4. Rate Limiter: Protect all /api endpoints from abuse
+app.use('/api/', apiLimiter);
 
-let categories = [
-  {
-    id: "cat-1",
-    name: "Web Development",
-    icon: "Code2",
-    count: "120+ Students",
-    color: "from-forest-800 to-forest-950",
-    description: "React, Node.js, HTML/CSS, Tailwind, Vue, and Web APIs.",
-    popularTopics: ["React & Next.js", "Tailwind CSS Layouts", "JavaScript Essentials", "RESTful API Design"],
-  },
-  {
-    id: "cat-2",
-    name: "UI/UX & Graphic Design",
-    icon: "Palette",
-    count: "85+ Students",
-    color: "from-amber-600 to-stone-800",
-    description: "Figma, Adobe XD, Wireframing, User Research & Design Systems.",
-    popularTopics: ["Figma Component Libraries", "Wireframing Workflows", "Color Theory", "User Testing"],
-  },
-  {
-    id: "cat-3",
-    name: "Data Science & AI",
-    icon: "Brain",
-    count: "95+ Students",
-    color: "from-emerald-700 to-forest-900",
-    description: "Python, Machine Learning, Pandas, SQL, & Data Visualization.",
-    popularTopics: ["Pandas & NumPy", "SQL Database Queries", "Scikit-Learn Basics", "Data Cleaning"],
-  },
-  {
-    id: "cat-4",
-    name: "Language Exchange",
-    icon: "Globe",
-    count: "150+ Students",
-    color: "from-stone-700 to-stone-900",
-    description: "Spanish, French, Mandarin, German, English & Japanese.",
-    popularTopics: ["Conversational Spanish", "Business English", "Intro French", "German Vocabulary"],
-  },
-  {
-    id: "cat-5",
-    name: "Video & Media Production",
-    icon: "Video",
-    count: "60+ Students",
-    color: "from-forest-700 to-forest-900",
-    description: "Premiere Pro, DaVinci Resolve, Motion Graphics, & Audio Editing.",
-    popularTopics: ["Video Editing Cuts", "Color Grading in DaVinci", "Audio Cleanup", "Thumbnail Design"],
-  },
-  {
-    id: "cat-6",
-    name: "Academics & STEM Tutoring",
-    icon: "BookOpen",
-    count: "110+ Students",
-    color: "from-emerald-800 to-forest-950",
-    description: "Calculus, Linear Algebra, Physics, Chemistry & Statistics.",
-    popularTopics: ["Calculus II Integration", "Linear Algebra Matrices", "Classical Mechanics", "Probability"],
-  },
-];
-
-let suggestedStudents = [
-  {
-    id: "user-101",
-    name: "Sarah Chen",
-    major: "Digital Interaction Design (Junior)",
-    university: "State Tech University",
-    avatar: "SC",
-    rating: 4.9,
-    swapsCount: 18,
-    availability: "Tuesdays & Thursdays (3 PM - 7 PM)",
-    bio: "Passionate about creating clean UI systems and design tokens. Happy to teach Figma fundamentals in exchange for help with React components.",
-    teaches: ["Figma UI", "Design Systems", "User Testing"],
-    wantsToLearn: ["React.js", "JavaScript"],
-    matchPercentage: 96,
-  },
-  {
-    id: "user-102",
-    name: "Carlos Mendez",
-    major: "International Relations (Senior)",
-    university: "State Tech University",
-    avatar: "CM",
-    rating: 4.8,
-    swapsCount: 11,
-    availability: "Flexible on weekends & Friday afternoons",
-    bio: "Native Spanish speaker offering immersive conversational practice and pronunciation guidance. Eager to pick up Python for data processing.",
-    teaches: ["Spanish (Native)", "Latin American History"],
-    wantsToLearn: ["Python Basics", "Excel Analytics"],
-    matchPercentage: 92,
-  },
-  {
-    id: "user-103",
-    name: "Emily Watson",
-    major: "Data Analytics (Sophomore)",
-    university: "State Tech University",
-    avatar: "EW",
-    rating: 5.0,
-    swapsCount: 22,
-    availability: "Mondays & Wednesdays (5 PM - 8 PM)",
-    bio: "Strong background in SQL querying and core algorithms. Looking to exchange tutoring for modern Tailwind CSS and web styling techniques.",
-    teaches: ["SQL", "Data Structures", "Python"],
-    wantsToLearn: ["Tailwind CSS", "Figma"],
-    matchPercentage: 88,
-  },
-  {
-    id: "user-104",
-    name: "Marcus Johnson",
-    major: "Media Arts & Production (Junior)",
-    university: "State Tech University",
-    avatar: "MJ",
-    rating: 4.7,
-    swapsCount: 9,
-    availability: "Weekends all day",
-    bio: "Freelance video editor specializing in DaVinci Resolve color grading and Premiere timelines. Looking to learn basic HTML/CSS & JS for a portfolio site.",
-    teaches: ["Video Editing", "DaVinci Resolve"],
-    wantsToLearn: ["JavaScript", "HTML/CSS"],
-    matchPercentage: 84,
-  },
-];
-
-let recentActivity = [
-  {
-    id: "act-1",
-    type: "request_received",
-    title: "Swap Request from Sarah Chen",
-    detail: "Proposed a 1-hour session exchanging Figma Design Systems for React Hooks guidance.",
-    timestamp: "2 hours ago",
-    status: "Pending Review",
-    partner: "Sarah Chen",
-  },
-  {
-    id: "act-2",
-    type: "swap_completed",
-    title: "Completed Session with Carlos Mendez",
-    detail: "1-hour exchange: Conversational Spanish dialogue practice & JavaScript ES6 syntax.",
-    timestamp: "Yesterday",
-    status: "Completed",
-    partner: "Carlos Mendez",
-  },
-  {
-    id: "act-3",
-    type: "rating_received",
-    title: "5-Star Peer Review from Emily Watson",
-    detail: '"Alex explained React state management and props so clearly! Highly recommended partner."',
-    timestamp: "3 days ago",
-    status: "Peer Review",
-    partner: "Emily Watson",
-  },
-];
-
-// Helper to extract user initials
+// Helper to extract initials
 function getInitials(name) {
   if (!name) return 'ST';
   const parts = name.trim().split(' ');
@@ -192,303 +125,625 @@ function getInitials(name) {
 // AUTHENTICATION ENDPOINTS
 // ----------------------------------------------------
 
-// POST /api/auth/login
-app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body;
+// POST /api/auth/login (Includes Rate Limiter & express-validator rules)
+app.post('/api/auth/login', authLimiter, validateLogin, async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({
-      error: "Validation failed: Email and password are required.",
+    // Find user by lowercase email
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(401).json({
+        error: 'Unauthorized (401)',
+        message: 'Invalid credentials. User profile not found.',
+      });
+    }
+
+    // Compare hashed password with bcrypt
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(401).json({
+        error: 'Unauthorized (401)',
+        message: 'Invalid credentials. Please verify your password.',
+      });
+    }
+
+    // Generate signed JWT with server-verified role
+    const token = generateToken(user);
+
+    return res.status(200).json({
+      message: 'Login successful',
+      token,
+      user: user.toSafeObject(),
     });
+  } catch (err) {
+    next(err);
   }
-
-  if (!email.includes('@')) {
-    return res.status(400).json({
-      error: "Please enter a valid university email address.",
-    });
-  }
-
-  // Safe user payload (never return password)
-  const safeUser = {
-    id: currentUserProfile.id,
-    name: currentUserProfile.name,
-    email: email.toLowerCase(),
-    role: currentUserProfile.role,
-    university: currentUserProfile.university,
-    avatar: currentUserProfile.avatar,
-  };
-
-  const token = `skillsync_jwt_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-
-  return res.status(200).json({
-    message: "Login successful",
-    token,
-    user: safeUser,
-  });
 });
 
-// POST /api/auth/register
-app.post('/api/auth/register', (req, res) => {
-  const { name, email, major, password } = req.body;
+// POST /api/auth/register (Includes express-validator rules)
+app.post('/api/auth/register', validateRegister, async (req, res, next) => {
+  try {
+    const { name, email, major, password } = req.body;
 
-  if (!name || !email || !password) {
-    return res.status(400).json({
-      error: "Validation failed: Name, email, and password are required.",
+    // Check if email already registered
+    const existing = await User.findOne({ email: email.toLowerCase() });
+    if (existing) {
+      return res.status(400).json({
+        message: 'Validation failed',
+        errors: [{ field: 'email', message: 'An account with this university email already exists.' }],
+      });
+    }
+
+    const avatar = getInitials(name);
+
+    // SECURITY: Always assign base 'staff' role for public registrations
+    const newUser = new User({
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+      password, // Mongoose pre-save hook will hash this with bcryptjs
+      role: ROLES.STAFF,
+      major: major ? major.trim() : 'Computer Science Student',
+      university: 'State Tech University',
+      avatar,
+      skillsOffered: [],
+      skillsWanted: [],
+      securityStatus: 'Good Standing',
     });
-  }
 
-  if (!email.includes('@')) {
-    return res.status(400).json({
-      error: "Please provide a valid student email address.",
+    await newUser.save();
+
+    const token = generateToken(newUser);
+
+    return res.status(201).json({
+      message: 'Student profile registered successfully',
+      token,
+      user: newUser.toSafeObject(),
     });
+  } catch (err) {
+    next(err);
   }
-
-  if (password.length < 6) {
-    return res.status(400).json({
-      error: "Password must be at least 6 characters long.",
-    });
-  }
-
-  const avatar = getInitials(name);
-  const role = major ? `${major}` : 'Student Member';
-
-  // Update in-memory user profile
-  currentUserProfile = {
-    ...currentUserProfile,
-    id: `usr-${Date.now()}`,
-    name,
-    email: email.toLowerCase(),
-    role,
-    avatar,
-  };
-
-  const safeUser = {
-    id: currentUserProfile.id,
-    name: currentUserProfile.name,
-    email: currentUserProfile.email,
-    role: currentUserProfile.role,
-    university: currentUserProfile.university,
-    avatar: currentUserProfile.avatar,
-  };
-
-  const token = `skillsync_jwt_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-
-  return res.status(201).json({
-    message: "Student profile registered successfully",
-    token,
-    user: safeUser,
-  });
 });
 
-// GET /api/auth/me
-app.get('/api/auth/me', (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: "Unauthorized: No valid session token provided." });
+// GET /api/auth/me (Protected JWT route)
+app.get('/api/auth/me', authenticate, async (req, res, next) => {
+  try {
+    return res.status(200).json({
+      user: req.user.toSafeObject(),
+    });
+  } catch (err) {
+    next(err);
   }
+});
 
-  return res.status(200).json({
-    user: {
-      id: currentUserProfile.id,
-      name: currentUserProfile.name,
-      email: currentUserProfile.email,
-      role: currentUserProfile.role,
-      university: currentUserProfile.university,
-      avatar: currentUserProfile.avatar,
-    },
-  });
+// ----------------------------------------------------
+// EXPERIMENT 6: DEMONSTRATION PROTECTED ROUTES (JWT & RBAC)
+// ----------------------------------------------------
+
+// GET /api/protected/user (Accessible to all authenticated users: student/user and admin)
+app.get('/api/protected/user', authenticate, async (req, res, next) => {
+  try {
+    return res.status(200).json({
+      success: true,
+      message: `Access granted to user protected resource. Welcome, ${req.user.name}!`,
+      accessLevel: 'user',
+      user: {
+        id: req.user._id.toString(),
+        name: req.user.name,
+        email: req.user.email,
+        role: req.user.role,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/protected/admin (Accessible strictly to administrators; rejects normal users with 403)
+app.get('/api/protected/admin', authenticate, requireRole([ROLES.ADMIN]), async (req, res, next) => {
+  try {
+    const totalUsers = await User.countDocuments();
+    return res.status(200).json({
+      success: true,
+      message: `Access granted to administrator portal. Welcome, Administrator ${req.user.name}!`,
+      accessLevel: 'admin',
+      adminData: {
+        systemStatus: 'Operational',
+        database: 'MongoDB skillsync',
+        totalRegisteredUsers: totalUsers,
+        adminUser: req.user.email,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ----------------------------------------------------
 // USER PROFILE & SKILLS ENDPOINTS
 // ----------------------------------------------------
 
-// GET /api/user/profile
-app.get('/api/user/profile', (req, res) => {
-  return res.status(200).json(currentUserProfile);
-});
+// GET /api/user/profile (JWT Protected with safe/admin projections)
+app.get('/api/user/profile', optionalAuthenticate, async (req, res, next) => {
+  try {
+    if (req.user) {
+      // If user has HR or Admin role, include admin view
+      if (req.user.role === ROLES.HR || req.user.role === ROLES.ADMIN) {
+        return res.status(200).json(req.user.toAdminObject());
+      }
+      return res.status(200).json(req.user.toSafeObject());
+    }
 
-// GET /api/skills
-app.get('/api/skills', (req, res) => {
-  return res.status(200).json({
-    offered: currentUserProfile.skillsOffered,
-    wanted: currentUserProfile.skillsWanted,
-  });
-});
+    // Fallback default profile if unauthenticated
+    const defaultUser = await User.findOne({ email: 'alex.rivera@university.edu' }) || await User.findOne({});
+    if (defaultUser) {
+      return res.status(200).json(defaultUser.toSafeObject());
+    }
 
-// POST /api/skills
-app.post('/api/skills', (req, res) => {
-  const { type, name, level, category, description } = req.body;
-
-  if (!name || !type) {
-    return res.status(400).json({ error: "Skill name and type ('teach' or 'learn') are required." });
-  }
-
-  const newId = `${type === 'teach' ? 's' : 'w'}-${Date.now()}`;
-
-  if (type === 'teach') {
-    const newSkill = {
-      id: newId,
-      name: name.trim(),
-      level: level || 'Intermediate',
-      category: category || 'General',
-      description: description || 'Peer instruction and practical exercises.',
-    };
-    currentUserProfile.skillsOffered.push(newSkill);
-    return res.status(201).json(newSkill);
-  } else if (type === 'learn') {
-    const newSkill = {
-      id: newId,
-      name: name.trim(),
-      targetLevel: level || 'Beginner Goal',
-      category: category || 'General',
-      description: description || 'Looking to learn fundamentals and best practices.',
-    };
-    currentUserProfile.skillsWanted.push(newSkill);
-    return res.status(201).json(newSkill);
-  } else {
-    return res.status(400).json({ error: "Invalid skill type. Must be 'teach' or 'learn'." });
+    return res.status(404).json({ error: 'No user profile found.' });
+  } catch (err) {
+    next(err);
   }
 });
 
-// PATCH /api/skills/:id
-app.patch('/api/skills/:id', (req, res) => {
-  const { id } = req.params;
-  const updates = req.body;
+// GET /api/skills (READ All Skills)
+app.get('/api/skills', optionalAuthenticate, async (req, res, next) => {
+  try {
+    let targetUser = req.user;
+    if (!targetUser) {
+      targetUser = await User.findOne({ email: 'alex.rivera@university.edu' }) || await User.findOne({});
+    }
 
-  let skill = currentUserProfile.skillsOffered.find((s) => s.id === id);
-  let isTeach = true;
+    if (!targetUser) {
+      return res.status(200).json({ offered: [], wanted: [] });
+    }
 
-  if (!skill) {
-    skill = currentUserProfile.skillsWanted.find((s) => s.id === id);
-    isTeach = false;
+    return res.status(200).json({
+      offered: targetUser.skillsOffered || [],
+      wanted: targetUser.skillsWanted || [],
+    });
+  } catch (err) {
+    next(err);
   }
-
-  if (!skill) {
-    return res.status(404).json({ error: "Skill not found with the specified ID." });
-  }
-
-  Object.assign(skill, updates);
-  return res.status(200).json(skill);
 });
 
-// DELETE /api/skills/:id
-app.delete('/api/skills/:id', (req, res) => {
-  const { id } = req.params;
+// GET /api/skills/:id (READ Single Skill)
+app.get('/api/skills/:id', optionalAuthenticate, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    let targetUser = req.user;
+    if (!targetUser) {
+      targetUser = await User.findOne({ email: 'alex.rivera@university.edu' }) || await User.findOne({});
+    }
 
-  const initialOfferedLength = currentUserProfile.skillsOffered.length;
-  currentUserProfile.skillsOffered = currentUserProfile.skillsOffered.filter((s) => s.id !== id);
+    let skill = targetUser?.skillsOffered?.find((s) => s.id === id) || targetUser?.skillsWanted?.find((s) => s.id === id);
 
-  const initialWantedLength = currentUserProfile.skillsWanted.length;
-  currentUserProfile.skillsWanted = currentUserProfile.skillsWanted.filter((s) => s.id !== id);
+    // If not found in current user, search across other users
+    if (!skill) {
+      const anyUser = await User.findOne({
+        $or: [{ 'skillsOffered.id': id }, { 'skillsWanted.id': id }],
+      });
+      if (anyUser) {
+        skill = anyUser.skillsOffered.find((s) => s.id === id) || anyUser.skillsWanted.find((s) => s.id === id);
+      }
+    }
 
-  if (
-    currentUserProfile.skillsOffered.length === initialOfferedLength &&
-    currentUserProfile.skillsWanted.length === initialWantedLength
-  ) {
-    return res.status(404).json({ error: "Skill not found." });
+    if (!skill) {
+      return res.status(404).json({ error: 'Skill not found with the specified ID.' });
+    }
+
+    return res.status(200).json(skill);
+  } catch (err) {
+    next(err);
   }
-
-  return res.status(200).json({
-    success: true,
-    message: "Skill removed successfully.",
-    removedId: id,
-  });
 });
+
+// POST /api/skills (CREATE Skill - Enforces skills:create permission & input validation)
+app.post(
+  '/api/skills',
+  authenticate,
+  requirePermission(PERMISSIONS.SKILLS_CREATE),
+  validateCreateSkill,
+  async (req, res, next) => {
+    try {
+      const { type, name, level, category, description } = req.body;
+
+      const newId = `${type === 'teach' ? 's' : 'w'}-${Date.now()}`;
+
+      if (type === 'teach') {
+        const newSkill = {
+          id: newId,
+          name: name.trim(),
+          level: level || 'Intermediate',
+          category: category || 'General',
+          description: description || 'Peer instruction and practical exercises.',
+        };
+        req.user.skillsOffered.push(newSkill);
+        await req.user.save();
+        return res.status(201).json(newSkill);
+      } else if (type === 'learn') {
+        const newSkill = {
+          id: newId,
+          name: name.trim(),
+          targetLevel: level || 'Beginner Goal',
+          category: category || 'General',
+          description: description || 'Looking to learn fundamentals and best practices.',
+        };
+        req.user.skillsWanted.push(newSkill);
+        await req.user.save();
+        return res.status(201).json(newSkill);
+      }
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// PATCH /api/skills/:id (UPDATE Skill - Enforces skills:update permission & input validation)
+app.patch(
+  '/api/skills/:id',
+  authenticate,
+  requirePermission(PERMISSIONS.SKILLS_UPDATE),
+  validateUpdateSkill,
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+
+      let skill = req.user.skillsOffered.find((s) => s.id === id);
+      if (!skill) {
+        skill = req.user.skillsWanted.find((s) => s.id === id);
+      }
+
+      if (!skill) {
+        return res.status(404).json({ error: 'Skill not found with the specified ID.' });
+      }
+
+      Object.assign(skill, updates);
+      await req.user.save();
+
+      return res.status(200).json(skill);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// DELETE /api/skills/:id (DELETE Skill - Enforces skills:delete permission)
+app.delete(
+  '/api/skills/:id',
+  authenticate,
+  requirePermission(PERMISSIONS.SKILLS_DELETE),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+
+      const initialOfferedLength = req.user.skillsOffered.length;
+      req.user.skillsOffered = req.user.skillsOffered.filter((s) => s.id !== id);
+
+      const initialWantedLength = req.user.skillsWanted.length;
+      req.user.skillsWanted = req.user.skillsWanted.filter((s) => s.id !== id);
+
+      if (
+        req.user.skillsOffered.length === initialOfferedLength &&
+        req.user.skillsWanted.length === initialWantedLength
+      ) {
+        return res.status(404).json({ error: 'Skill not found in your profile.' });
+      }
+
+      await req.user.save();
+
+      return res.status(200).json({
+        success: true,
+        message: 'Skill removed successfully.',
+        removedId: id,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 // ----------------------------------------------------
 // STUDENTS & CATEGORIES ENDPOINTS
 // ----------------------------------------------------
 
 // GET /api/categories
-app.get('/api/categories', (req, res) => {
-  const { search } = req.query;
-  let result = [...categories];
+app.get('/api/categories', async (req, res, next) => {
+  try {
+    const { search } = req.query;
+    let query = {};
 
-  if (search) {
-    const query = search.toLowerCase();
-    result = result.filter(
-      (c) =>
-        c.name.toLowerCase().includes(query) ||
-        c.description.toLowerCase().includes(query) ||
-        c.popularTopics.some((t) => t.toLowerCase().includes(query))
-    );
+    if (search) {
+      const regex = new RegExp(search, 'i');
+      query = {
+        $or: [
+          { name: regex },
+          { description: regex },
+          { popularTopics: regex },
+        ],
+      };
+    }
+
+    const categories = await Category.find(query);
+    return res.status(200).json(categories);
+  } catch (err) {
+    next(err);
   }
-
-  return res.status(200).json(result);
 });
 
 // GET /api/students
-app.get('/api/students', (req, res) => {
-  const { search, category } = req.query;
-  let result = [...suggestedStudents];
+app.get('/api/students', optionalAuthenticate, async (req, res, next) => {
+  try {
+    const { search, category } = req.query;
 
-  if (search) {
-    const query = search.toLowerCase();
-    result = result.filter(
-      (std) =>
-        std.name.toLowerCase().includes(query) ||
-        std.major.toLowerCase().includes(query) ||
-        std.bio.toLowerCase().includes(query) ||
-        std.teaches.some((t) => t.toLowerCase().includes(query)) ||
-        std.wantsToLearn.some((w) => w.toLowerCase().includes(query))
-    );
+    // Build query (exclude self if authenticated)
+    let query = {};
+    if (req.user) {
+      query._id = { $ne: req.user._id };
+    }
+
+    if (search) {
+      const regex = new RegExp(search, 'i');
+      query.$or = [
+        { name: regex },
+        { major: regex },
+        { bio: regex },
+        { teaches: regex },
+        { wantsToLearn: regex },
+        { 'skillsOffered.name': regex },
+        { 'skillsWanted.name': regex },
+      ];
+    }
+
+    const students = await User.find(query);
+    let result = students.map((std) => std.toSafeObject());
+
+    if (category && category !== 'All') {
+      const catLower = category.toLowerCase();
+      result = result.filter(
+        (std) =>
+          std.teaches?.some((t) => t.toLowerCase().includes(catLower)) ||
+          std.wantsToLearn?.some((w) => w.toLowerCase().includes(catLower)) ||
+          std.skillsOffered?.some((s) => s.category?.toLowerCase().includes(catLower))
+      );
+    }
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
   }
-
-  if (category && category !== 'All') {
-    const catLower = category.toLowerCase();
-    result = result.filter(
-      (std) =>
-        std.teaches.some((t) => t.toLowerCase().includes(catLower)) ||
-        std.wantsToLearn.some((w) => w.toLowerCase().includes(catLower))
-    );
-  }
-
-  return res.status(200).json(result);
 });
 
 // ----------------------------------------------------
-// ACTIVITY & SWAP REQUESTS ENDPOINTS
+// ACTIVITY & SWAP REQUESTS ENDPOINTS (PROTECTED VIEWS)
 // ----------------------------------------------------
 
-// GET /api/activity
-app.get('/api/activity', (req, res) => {
-  return res.status(200).json(recentActivity);
+// GET /api/activity (Protected View: Sensitive audit logs filtered for regular users)
+app.get('/api/activity', optionalAuthenticate, async (req, res, next) => {
+  try {
+    const userRole = req.user?.role;
+
+    const canViewRestricted = userRole && (
+      userRole === ROLES.HR ||
+      userRole === ROLES.AUDITOR ||
+      userRole === ROLES.ADMIN
+    );
+
+    let query = {};
+    if (!canViewRestricted) {
+      query = { isRestricted: false };
+    }
+
+    const activities = await Activity.find(query).sort({ createdAt: -1 }).limit(20);
+    return res.status(200).json(activities);
+  } catch (err) {
+    next(err);
+  }
 });
 
-// POST /api/swap-requests
-app.post('/api/swap-requests', (req, res) => {
-  const { studentId, studentName, offeredSkill, wantedSkill, note } = req.body;
+// POST /api/swap-requests (Enforces swaps:create permission)
+app.post(
+  '/api/swap-requests',
+  authenticate,
+  requirePermission(PERMISSIONS.SWAPS_CREATE),
+  async (req, res, next) => {
+    try {
+      const { studentId, studentName, offeredSkill, wantedSkill, note } = req.body;
 
-  if (!studentId || !studentName) {
-    return res.status(400).json({ error: "Target student information is required." });
+      if (!studentId || !studentName) {
+        return res.status(400).json({ error: 'Target student information is required.' });
+      }
+
+      const swapRequest = new SwapRequest({
+        studentId,
+        studentName,
+        requesterId: req.user._id,
+        requesterName: req.user.name,
+        offeredSkill: offeredSkill || 'Web Development',
+        wantedSkill: wantedSkill || 'Tutoring',
+        note: note || '',
+        status: 'Pending Review',
+      });
+
+      await swapRequest.save();
+
+      const newActivity = new Activity({
+        id: `act-${Date.now()}`,
+        type: 'request_sent',
+        title: `Swap Proposal Sent to ${studentName}`,
+        detail: note || `Proposed 1-on-1 session exchanging ${offeredSkill || 'Skills'} for ${wantedSkill || 'tutoring'}.`,
+        timestamp: 'Just now',
+        status: 'Pending Review',
+        partner: studentName,
+        userId: req.user._id,
+        isRestricted: false,
+      });
+
+      await newActivity.save();
+
+      return res.status(201).json({
+        success: true,
+        message: `Swap request successfully sent to ${studentName}`,
+        activity: newActivity,
+        swapRequest,
+      });
+    } catch (err) {
+      next(err);
+    }
   }
+);
 
-  const newActivity = {
-    id: `act-${Date.now()}`,
-    type: "request_sent",
-    title: `Swap Proposal Sent to ${studentName}`,
-    detail: note || `Proposed 1-on-1 session exchanging ${offeredSkill || 'Frontend'} for ${wantedSkill || 'tutoring'}.`,
-    timestamp: "Just now",
-    status: "Pending Review",
-    partner: studentName,
-  };
+// ----------------------------------------------------
+// RBAC AUDIT & MANAGEMENT ENDPOINTS
+// ----------------------------------------------------
 
-  recentActivity.unshift(newActivity);
+// GET /api/rbac/permissions (Returns role capabilities & permission matrix)
+app.get('/api/rbac/permissions', optionalAuthenticate, (req, res) => {
+  const currentRole = req.user?.role || 'anonymous';
+  return res.status(200).json({
+    currentRole,
+    grantedPermissions: req.user ? ROLE_PERMISSIONS[currentRole] || [] : [],
+    allRoles: ROLES,
+    permissionMatrix: ROLE_PERMISSIONS,
+  });
+});
 
-  return res.status(201).json({
+// GET /api/admin/users (Admin / HR only: shows full student directory with securityStatus & internal notes)
+app.get('/api/admin/users', authenticate, requireRole([ROLES.ADMIN, ROLES.HR]), async (req, res, next) => {
+  try {
+    const users = await User.find({}).select('+internalModerationNotes');
+    const fullUsers = users.map((u) => u.toAdminObject());
+    return res.status(200).json(fullUsers);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/admin/users/:id/role (Admin only: changes a user's role)
+app.patch('/api/admin/users/:id/role', authenticate, requireRole([ROLES.ADMIN]), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { role, moderationNote } = req.body;
+
+    if (!Object.values(ROLES).includes(role)) {
+      return res.status(400).json({
+        error: `Invalid role specified. Valid roles are: ${Object.values(ROLES).join(', ')}`,
+      });
+    }
+
+    const user = await User.findById(id).select('+internalModerationNotes');
+    if (!user) {
+      return res.status(404).json({ error: 'User record not found.' });
+    }
+
+    const oldRole = user.role;
+    user.role = role;
+    if (moderationNote) {
+      user.internalModerationNotes = moderationNote;
+    }
+    await user.save();
+
+    // Log admin audit action
+    const auditActivity = new Activity({
+      id: `act-sec-${Date.now()}`,
+      type: 'role_assigned',
+      title: `Role Modified: ${user.name}`,
+      detail: `Administrator ${req.user.name} modified role for ${user.name} from '${oldRole}' to '${role}'.`,
+      timestamp: 'Just now',
+      status: 'Role Updated',
+      partner: req.user.name,
+      isRestricted: true,
+    });
+    await auditActivity.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `User ${user.name} role successfully updated to ${role}.`,
+      user: user.toAdminObject(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ----------------------------------------------------
+// EXPERIMENT 8: REAL-TIME ANNOUNCEMENTS (SOCKET.IO)
+// ----------------------------------------------------
+
+// POST /api/announcements (Authorized Admin publishes real-time announcement)
+app.post(
+  '/api/announcements',
+  authenticate,
+  requireRole([ROLES.ADMIN]),
+  (req, res) => {
+    const { message } = req.body;
+
+    if (typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Announcement message is required',
+      });
+    }
+
+    const announcement = {
+      id: `ann-${Date.now()}`,
+      message: message.trim(),
+      author: req.user?.name || 'Administrator',
+      timestamp: new Date().toISOString(),
+    };
+
+    // Keep the latest 50 announcements in memory for live demonstration
+    liveAnnouncements.unshift(announcement);
+    if (liveAnnouncements.length > 50) {
+      liveAnnouncements.pop();
+    }
+
+    // Broadcast to all clients in the announcements room
+    io.to('announcements').emit('new-announcement', announcement);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Announcement published successfully',
+      announcement,
+    });
+  }
+);
+
+// GET /api/announcements (Fetch recent live announcements)
+app.get('/api/announcements', optionalAuthenticate, (req, res) => {
+  return res.status(200).json({
     success: true,
-    message: `Swap request successfully sent to ${studentName}`,
-    activity: newActivity,
+    announcements: liveAnnouncements,
   });
 });
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.status(200).json({
+    status: 'ok',
+    database: 'MongoDB Connected',
+    databaseName: 'skillsync',
+    securityHeaders: 'Helmet Active',
+    rateLimiting: 'express-rate-limit Active',
+    realTimeSocket: 'Socket.IO Active',
+    timestamp: new Date().toISOString(),
+  });
 });
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`SkillSync BFF API Server running on http://localhost:${PORT}`);
+// ----------------------------------------------------
+// SECURE ERROR HANDLING (Mounted at bottom)
+// ----------------------------------------------------
+
+// Catch-all 404 Handler for undefined API routes
+app.use(notFoundHandler);
+
+// Global Centralized Error Handler (suppresses raw stack traces)
+app.use(errorHandler);
+
+// Start Server (HTTP + Socket.IO)
+server.listen(PORT, () => {
+  console.log(`[SkillSync API]: Server running on http://localhost:${PORT}`);
 });

@@ -38,7 +38,12 @@ export function SkillProvider({ children }) {
 
       return createdSkill;
     } catch (err) {
-      // Local fallback resilience for offline/demo environments
+      // If server explicitly denied access due to RBAC (403 or 401), rethrow so UI can notify user
+      if (err.status === 403 || err.status === 401) {
+        throw new Error(err.message || 'Access Denied: You do not have permission to add skills.');
+      }
+
+      // Local fallback resilience for offline demo environments
       const fallbackSkill = {
         id: `${type === 'teach' ? 's' : 'w'}-${Date.now()}`,
         name: name.trim(),
@@ -61,10 +66,13 @@ export function SkillProvider({ children }) {
   const removeSkill = async (id) => {
     try {
       await skillsApi.deleteSkill(id);
+      setSkillsOffered((prev) => prev.filter((skill) => skill.id !== id));
+      setSkillsWanted((prev) => prev.filter((skill) => skill.id !== id));
     } catch (err) {
+      if (err.status === 403 || err.status === 401) {
+        throw new Error(err.message || 'Access Denied: You do not have permission to delete skills.');
+      }
       console.warn('API deletion fallback to local state:', err);
-    } finally {
-      // Synchronously update global Context state
       setSkillsOffered((prev) => prev.filter((skill) => skill.id !== id));
       setSkillsWanted((prev) => prev.filter((skill) => skill.id !== id));
     }

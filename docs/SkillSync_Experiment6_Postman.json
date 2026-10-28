@@ -1,0 +1,562 @@
+{
+  "info": {
+    "_postman_id": "skillsync-experiment6-jwt-auth-roles",
+    "name": "SkillSync Experiment 6 - JWT Authentication & User Roles",
+    "description": "Complete test suite for Experiment 6: Demonstrates Registration, Bcrypt Hashing, JWT Generation, Protected Route Authentication, and User vs. Admin RBAC Authorization (403 Forbidden vs 200 OK).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5001",
+      "type": "string"
+    },
+    {
+      "key": "userToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "registeredEmail",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "TEST 1 — Register Normal User (201 Created)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 201 Created\", function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "pm.test(\"Returns JWT token and user profile with default 'staff' (User) role\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('token');",
+              "    pm.expect(jsonData).to.have.property('user');",
+              "    pm.expect(jsonData.user.role).to.eql('staff');",
+              "    pm.expect(jsonData.user).to.not.have.property('password');",
+              "    pm.collectionVariables.set('userToken', jsonData.token);",
+              "    pm.collectionVariables.set('registeredEmail', jsonData.user.email);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Jordan Lee\",\n  \"email\": \"jordan.lee.{{$timestamp}}@university.edu\",\n  \"major\": \"Computer Science & Engineering\",\n  \"password\": \"UserPass123!\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/register",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "register"
+          ]
+        },
+        "description": "Registers a unique new student user using dynamic variable {{$timestamp}}. Passwords are encrypted with bcryptjs. Server assigns default role (201 Created)."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 2 — Attempt Duplicate Email Registration (400 Bad Request)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 400 Bad Request\", function () {",
+              "    pm.response.to.have.status(400);",
+              "});",
+              "pm.test(\"Rejects duplicate email with validation error\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.message).to.eql(\"Validation failed\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Jordan Duplicate\",\n  \"email\": \"{{registeredEmail}}\",\n  \"major\": \"Computer Science\",\n  \"password\": \"UserPass123!\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/register",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "register"
+          ]
+        },
+        "description": "Verifies email uniqueness check: Attempting to register an already existing email returns 400 Bad Request."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 3 — Login Normal User (200 OK + JWT)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Returns valid JWT session token\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('token');",
+              "    pm.expect(jsonData.user.email).to.eql(pm.collectionVariables.get('registeredEmail'));",
+              "    pm.collectionVariables.set('userToken', jsonData.token);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{registeredEmail}}\",\n  \"password\": \"UserPass123!\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Authenticates newly registered normal user. Verifies bcrypt password hash and generates signed JWT."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 4 — Login Incorrect Password (401 Unauthorized)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 401 Unauthorized\", function () {",
+              "    pm.response.to.have.status(401);",
+              "});",
+              "pm.test(\"Rejects incorrect password with generic error message\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.error).to.include(\"Unauthorized\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{registeredEmail}}\",\n  \"password\": \"WrongPassword999!\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Demonstrates secure bcrypt credential verification failure (401 Unauthorized)."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 5 — Protected Route WITHOUT Token (401 Unauthorized)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 401 Unauthorized\", function () {",
+              "    pm.response.to.have.status(401);",
+              "});",
+              "pm.test(\"Rejects request missing Bearer token\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.error).to.eql(\"Unauthorized\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/protected/user",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "protected",
+            "user"
+          ]
+        },
+        "description": "Demonstrates JWT authentication guard: Request without Authorization header is rejected with 401."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 6 — Protected Route WITH Invalid Token (401 Unauthorized)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 401 Unauthorized\", function () {",
+              "    pm.response.to.have.status(401);",
+              "});",
+              "pm.test(\"Rejects forged or tampered token signature\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.error).to.eql(\"Unauthorized\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer invalid.fake.token.signature"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/protected/user",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "protected",
+            "user"
+          ]
+        },
+        "description": "Demonstrates cryptographic token verification: Tampered signature is rejected with 401."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 7 — Profile /api/auth/me WITH Valid Token (200 OK)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Decodes trusted session profile without exposing password\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.user).to.have.property('email');",
+              "    pm.expect(jsonData.user.email).to.eql(pm.collectionVariables.get('registeredEmail'));",
+              "    pm.expect(jsonData.user).to.not.have.property('password');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "me"
+          ]
+        },
+        "description": "Retrieves authenticated user identity and persisted role directly from server-side JWT verification."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 8 — Protected User Route WITH User Token (200 OK)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Normal user receives access to user-protected resource\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.success).to.be.true;",
+              "    pm.expect(jsonData.accessLevel).to.eql(\"user\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/protected/user",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "protected",
+            "user"
+          ]
+        },
+        "description": "Tests user access level: An authenticated student (User) successfully accesses /api/protected/user."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 9 — Admin Route WITH User Token (403 Forbidden - Role Denial)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 403 Forbidden\", function () {",
+              "    pm.response.to.have.status(403);",
+              "});",
+              "pm.test(\"Server denies access to non-admin user\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.error).to.include(\"Forbidden\");",
+              "    pm.expect(jsonData.message).to.include(\"restricted to roles: [admin]\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/protected/admin",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "protected",
+            "admin"
+          ]
+        },
+        "description": "Demonstrates Role-Based Access Control: A normal student attempting to access the administrator endpoint is blocked with HTTP 403 Forbidden."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 10 — Login as Administrator (200 OK + Admin JWT)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Admin login returns JWT token with 'admin' role\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('token');",
+              "    pm.expect(jsonData.user.role).to.eql('admin');",
+              "    pm.collectionVariables.set('adminToken', jsonData.token);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"admin@university.edu\",\n  \"password\": \"AdminPass123!\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Authenticates as the securely provisioned administrator account (admin@university.edu). Captures adminToken."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 11 — Admin Route WITH Admin Token (200 OK - Access Granted)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Administrator successfully accesses admin-protected resource\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.success).to.be.true;",
+              "    pm.expect(jsonData.accessLevel).to.eql(\"admin\");",
+              "    pm.expect(jsonData.adminData).to.have.property('systemStatus');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/protected/admin",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "protected",
+            "admin"
+          ]
+        },
+        "description": "Demonstrates successful administrator authorization: Administrator token grants full access to /api/protected/admin (200 OK)."
+      },
+      "response": []
+    },
+    {
+      "name": "TEST 12 — Security Integrity: Helmet & Rate Limiting Verification (200 OK)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Helmet headers and rate limit headers remain active\", function () {",
+              "    pm.expect(pm.response.headers.has(\"Content-Security-Policy\")).to.be.true;",
+              "    pm.expect(pm.response.headers.has(\"X-Content-Type-Options\")).to.be.true;",
+              "    pm.expect(pm.response.headers.has(\"X-Frame-Options\")).to.be.true;",
+              "    pm.expect(pm.response.headers.has(\"RateLimit-Limit\")).to.be.true;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "health"
+          ]
+        },
+        "description": "Confirms that Experiment 5 security controls (Helmet HTTP headers, rate limit headers, CORS) remain intact alongside Experiment 6 authentication."
+      },
+      "response": []
+    }
+  ]
+}
